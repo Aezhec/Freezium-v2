@@ -1,48 +1,84 @@
-# Freezium
+# ❄️ Freezium v2
 
-Freezium, Windows için geliştirilmiş akıllı proxy yönlendirmesi ve izleme listesi yönetim aracıdır. Yerel PAC (Proxy Auto-Configuration) servisi sayesinde yalnızca hedef site trafiğini işler ve genel internet hızınızı etkilemeden çalışır.
+![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue?style=flat-square&logo=windows)
+![Framework](https://img.shields.io/badge/.NET%20Framework-v4.8-purple?style=flat-square&logo=dotnet)
+![Release](https://img.shields.io/badge/Release-v1.0.0-green?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-orange?style=flat-square)
 
----
+**Freezium**, Windows işletim sistemleri için geliştirilmiş, akıllı ağ yönlendirme teknolojisine (PAC) sahip bir proxy ve izleme listesi yönetim uygulamasıdır.
 
-## Özellikler
-
-- **Akıllı Yönlendirme:** Yalnızca hedef domain trafiğini proxy üzerinden geçirir; diğer tüm ağ bağlantıları doğrudan (DIRECT) sağlanır.
-- **İzleme Listesi Yönetimi:** İzleme listesi, takip ve favori durumlarını yerel LiteDB veritabanında saklar ve senkronize eder.
-- **Otomatik Oturum Yönetimi:** Uygulama başlatıldığında ağ ayarlarını yapılandırır, kapatıldığında sistem ayarlarını otomatik olarak temizler.
-- **Sistem Tepsi (Tray) Entegrasyonu:** Arka planda sessizce çalışabilir ve sistem tepsisinden hızlıca yönetilebilir.
+Genel internet trafiğinize (oyunlar, YouTube, indirmeler) dokunmadan, **yalnızca hedef domain trafiğini** güvenli şekilde işler ve internet hızınızda sıfır kayıp sağlar.
 
 ---
 
-## Kurulum ve Çalıştırma
+## ✨ Öne Çıkan Özellikler
 
-### Kurulum Dosyası İle (Önerilen)
+| Özellik | Açıklama |
+| :--- | :--- |
+| ⚡ **Akıllı PAC Yönlendirmesi** | Ağ trafiğini analiz eder; sadece hedef site isteklerini proxy'ye alır, diğer tüm trafiği doğrudan (`DIRECT`) yönlendirir. |
+| 💾 **Yerel Veritabanı Entegrasyonu** | Favoriler, takip listesi ve izleme geçmişini yerel **LiteDB** veritabanında güvenle saklar. |
+| 🔄 **Otomatik Ağ Temizliği** | Uygulama durdurulduğunda veya kapatıldığında sistem proxy ayarlarını otomatik olarak ilk haline getirir. |
+| 📌 **Sistem Tepsi (Tray) Desteği** | Arka planda sessizce çalışır, sistem tepsisinden tek tıkla kontrol edilebilir. |
+| 🎨 **Modern Kullanıcı Arayüzü** | Sade, kullanışlı ve modern WPF arayüzü. |
 
-1. [Releases](https://github.com/Aezhec/Freezium-v2/releases/tag/v1.0.0) sayfasından `setup.exe` dosyasını indirin.
-2. `setup.exe` dosyasını çalıştırarak kurulumu tamamlayın.
-3. Masaüstü veya Başlat menüsündeki **Freezium** kısayolundan uygulamayı başlatın.
+---
 
-> **Not (Windows SmartScreen):** İmzalanmamış kurulum dosyalarında Windows mavi uyarı ekranı gösterebilir. Bu durumda *"Daha fazla bilgi -> Yine de çalıştır"* seçeneği ile devam edebilirsiniz.
+## 📥 İndirme ve Kurulum
 
-### Kaynak Koddan Derleme
+### 1. Hazır Kurulum Dosyası İle (Önerilen)
+
+1. [**GitHub Releases**](https://github.com/Aezhec/Freezium-v2/releases/tag/v1.0.0) sayfasından en güncel **`setup.exe`** dosyasını indirin.
+2. `setup.exe` dosyasını çalıştırın ve kurulum adımlarını takip edin.
+3. Masaüstü veya Başlat menünüzde oluşan **Freezium** kısayolundan uygulamayı başlatın.
+
+> 💡 **Windows SmartScreen Uyarısı Hakkında:**  
+> İmzalanmamış kurulum dosyalarında Windows mavi uyarı ekranı gösterebilir. Bu durumda **"Daha fazla bilgi"** yazısına tıklayıp **"Yine de çalıştır"** butonunu seçerek kuruluma devam edebilirsiniz.
+
+---
+
+### 2. Kaynak Koddan Derleme (Geliştiriciler İçin)
+
+Projenin kaynak kodlarını yerelde derlemek isterseniz:
 
 ```bash
-# Visual Studio ile Freezium.sln dosyasını açın
-# Çözümü derleyin (Ctrl + Shift + B)
-# Uygulamayı çalıştırın (F5)
+# Repoyu klonlayın
+git clone https://github.com/Aezhec/Freezium-v2.git
+
+# Proje dizinine gidin
+cd Freezium-v2
 ```
 
----
-
-## Kullanım
-
-1. **Proxy'yi Başlat** butonuna tıklayın.
-2. İlk çalıştırmada yerel SSL sertifika onayı penceresi çıkarsa onay verin.
-3. Uygulama aktif durumdayken hedef siteye erişim sağlayın.
-4. Kullanımı sonlandırmak için **Proxy'yi Durdur** butonuna tıklayın.
+- `Freezium.sln` dosyasını **Visual Studio 2019 / 2022 / 2026** ile açın.
+- `Ctrl + Shift + B` kısayolu ile projeyi derleyin.
+- `F5` tuşu ile uygulamayı başlatın.
 
 ---
 
-## Sistem Gereksinimleri
+## 🚀 Kullanım Adımları
 
-- **İşletim Sistemi:** Windows 10 / Windows 11 (64-bit)
-- **Çalışma Zamanı:** .NET Framework 4.8
+1. **Uygulamayı Açın:** Freezium arayüzünde bulunan **"Proxy'yi Başlat"** butonuna tıklayın.
+2. **Sertifika Onayı (İlk Çalıştırma):** Yerel HTTPS trafiğinin işlenebilmesi için Windows sertifika onay penceresi çıkarsa **"Evet / Onayla"** seçeneğini seçin.
+3. **Kullanım:** Uygulama aktif durumdayken hedef siteye erişebilirsiniz.
+4. **Kapatma:** İşiniz bittiğinde **"Proxy'yi Durdur"** butonuna basarak ağ ayarlarını eski haline getirebilirsiniz.
+
+---
+
+## 🛠️ Sistem Gereksinimleri
+
+- **İşletim Sistemi:** Windows 10 (1809+) / Windows 11 (64-bit)
+- **Çalışma Zamanı:** [.NET Framework 4.8 Runtime](https://dotnet.microsoft.com/download/dotnet-framework/net48) (Setup dosyası otomatik kontrol eder)
+
+---
+
+## 🛠️ Kullanılan Teknolojiler
+
+- **Dil / Çatı:** C# | .NET Framework 4.8 (WPF)
+- **Proxy Motoru:** FiddlerCore
+- **Veritabanı:** LiteDB
+- **Paketleme & Yayın:** Costura.Fody & ClickOnce Publish
+
+---
+
+## 📜 Lisans
+
+Bu proje **MIT Lisansı** altında lisanslanmıştır. Detaylar için [LICENSE](LICENSE) dosyasına göz atabilirsiniz.
