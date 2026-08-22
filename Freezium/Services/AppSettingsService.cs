@@ -9,6 +9,7 @@ namespace Freezium.Services
     /// </summary>
     public static class AppSettingsService
     {
+        private static readonly object _lock = new object();
         private static IAppSettings _current;
         private static ISettingsRepository _repository;
 
@@ -17,8 +18,20 @@ namespace Freezium.Services
         /// </summary>
         public static IAppSettings Current
         {
-            get => _current;
-            private set => _current = value;
+            get
+            {
+                lock (_lock)
+                {
+                    return _current;
+                }
+            }
+            private set
+            {
+                lock (_lock)
+                {
+                    _current = value;
+                }
+            }
         }
 
         /// <summary>
@@ -26,16 +39,19 @@ namespace Freezium.Services
         /// </summary>
         public static void Initialize(ISettingsRepository repository)
         {
-            _repository = repository;
+            lock (_lock)
+            {
+                _repository = repository;
 
-            var settings = _repository.Load();
-            if (settings != null)
-            {
-                Current = settings.GetProxy();
-            }
-            else
-            {
-                Current = new AppSettings().GetProxy();
+                var settings = _repository.Load();
+                if (settings != null)
+                {
+                    _current = settings.GetProxy();
+                }
+                else
+                {
+                    _current = new AppSettings().GetProxy();
+                }
             }
         }
 
@@ -45,10 +61,14 @@ namespace Freezium.Services
         /// </summary>
         public static void Save()
         {
-            if (_repository != null && _current != null)
+            lock (_lock)
             {
-                _repository.Save(_current.Get());
+                if (_repository != null && _current != null)
+                {
+                    _repository.Save(_current.Get());
+                }
             }
         }
     }
 }
+

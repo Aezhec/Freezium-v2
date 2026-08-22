@@ -2,7 +2,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Freezium.Infrastructure.Crypto
@@ -19,6 +19,9 @@ namespace Freezium.Infrastructure.Crypto
 
         public static string Encrypt(string text, string specialKey)
         {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(specialKey))
+                return null;
+
             try
             {
                 byte[] bytes = Encoding.UTF8.GetBytes(text);
@@ -30,7 +33,12 @@ namespace Freezium.Infrastructure.Crypto
                     result[i] = (byte)(bytes[i] ^ keyBytes[i % keyBytes.Length]);
                 }
 
-                return BitConverter.ToString(result).Replace("-", "").ToLower();
+                var sb = new StringBuilder(result.Length * 2);
+                for (int i = 0; i < result.Length; i++)
+                {
+                    sb.Append(result[i].ToString("x2"));
+                }
+                return sb.ToString();
             }
             catch (Exception ex)
             {
@@ -41,20 +49,24 @@ namespace Freezium.Infrastructure.Crypto
 
         public static string Decrypt(string hexText, string specialKey)
         {
-            if (hexText == null) return null;
+            if (string.IsNullOrEmpty(hexText) || string.IsNullOrEmpty(specialKey))
+                return null;
 
             try
             {
                 if (hexText.Length % 2 != 0)
                     throw new ArgumentException("Invalid hex string (odd length).");
 
-                byte[] encryptedBytes = Enumerable.Range(0, hexText.Length / 2)
-                    .Select(i => Convert.ToByte(hexText.Substring(i * 2, 2), 16))
-                    .ToArray();
+                int byteCount = hexText.Length / 2;
+                byte[] encryptedBytes = new byte[byteCount];
+                for (int i = 0; i < byteCount; i++)
+                {
+                    encryptedBytes[i] = Convert.ToByte(hexText.Substring(i * 2, 2), 16);
+                }
 
                 byte[] keyBytes = Encoding.UTF8.GetBytes(specialKey);
-
                 byte[] original = new byte[encryptedBytes.Length];
+
                 for (int i = 0; i < encryptedBytes.Length; i++)
                 {
                     original[i] = (byte)(encryptedBytes[i] ^ keyBytes[i % keyBytes.Length]);
@@ -71,10 +83,19 @@ namespace Freezium.Infrastructure.Crypto
 
         public static string TokenCreate(string tokenKey)
         {
-            TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Turkey Standard Time");
-            string dayName = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz)
-                .ToString("dddd", new CultureInfo("en-US")).ToLower();
+            DateTime trTime;
+            try
+            {
+                TimeZoneInfo tz = TimeZoneInfo.FindSystemTimeZoneById("Turkey Standard Time");
+                trTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+            }
+            catch
+            {
+                // Fallback to UTC+3 if "Turkey Standard Time" is not present on this system
+                trTime = DateTime.UtcNow.AddHours(3);
+            }
 
+            string dayName = trTime.ToString("dddd", new CultureInfo("en-US")).ToLower();
             string combinedKey = tokenKey + "_" + dayName;
             string randomKey = GenerateRandomString(6);
 
@@ -86,6 +107,8 @@ namespace Freezium.Infrastructure.Crypto
 
         public static string BodyEncrypt(object data, string clientKey)
         {
+            if (data == null) return null;
+
             try
             {
                 var dictionary = JsonConvert.DeserializeObject<Dictionary<string, object>>(
@@ -103,15 +126,21 @@ namespace Freezium.Infrastructure.Crypto
         private static string GenerateRandomString(int length)
         {
             const string chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-            var random = new Random();
             var result = new char[length];
+            var randomBytes = new byte[length];
+
+            using (var rng = new RNGCryptoServiceProvider())
+            {
+                rng.GetBytes(randomBytes);
+            }
 
             for (int i = 0; i < length; i++)
             {
-                result[i] = chars[random.Next(chars.Length)];
+                result[i] = chars[randomBytes[i] % chars.Length];
             }
 
             return new string(result);
         }
     }
 }
+

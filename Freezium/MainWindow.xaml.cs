@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -115,10 +116,21 @@ namespace Freezium
 
         public void AddLog(string text)
         {
-            Dispatcher.Invoke(() =>
+            if (string.IsNullOrEmpty(text)) return;
+
+            Dispatcher.BeginInvoke((Action)(() =>
             {
-                rtbLogs.Text = text + "\n" + rtbLogs.Text;
-            });
+                var currentText = rtbLogs.Text ?? "";
+                if (currentText.Length > 20000)
+                {
+                    var lines = currentText.Split(new[] { '\n' }, StringSplitOptions.None);
+                    if (lines.Length > 100)
+                    {
+                        currentText = string.Join("\n", System.Linq.Enumerable.Take(lines, 80));
+                    }
+                }
+                rtbLogs.Text = $"[{DateTime.Now:HH:mm:ss}] {text}\n{currentText}";
+            }));
         }
 
         #endregion
@@ -127,6 +139,8 @@ namespace Freezium
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            _proxyService.LogMessage -= AddLog;
+            _proxyService.StatusChanged -= UpdateStatus;
             _trayIcon?.Dispose();
             _proxyService.Shutdown();
         }

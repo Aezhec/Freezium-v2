@@ -27,6 +27,9 @@ namespace Freezium.Infrastructure.Proxy
         {
             _requestInterceptor = requestInterceptor;
             _responseInterceptor = responseInterceptor;
+
+            _requestInterceptor.LogMessage += msg => LogMessage?.Invoke(msg);
+            _responseInterceptor.LogMessage += msg => LogMessage?.Invoke(msg);
         }
 
         /// <summary>
@@ -34,33 +37,41 @@ namespace Freezium.Infrastructure.Proxy
         /// </summary>
         public bool EnsureCertificate()
         {
-            var certDir = Path.GetDirectoryName(Constants.CertLocation);
-            if (!Directory.Exists(certDir))
+            try
             {
-                Directory.CreateDirectory(certDir);
+                var certDir = Path.GetDirectoryName(Constants.CertLocation);
+                if (!Directory.Exists(certDir))
+                {
+                    Directory.CreateDirectory(certDir);
+                }
+
+                var certMaker = new BCCertMaker.BCCertMaker();
+                CertMaker.oCertProvider = certMaker;
+
+                if (!File.Exists(Constants.CertLocation))
+                {
+                    certMaker.CreateRootCertificate();
+                    certMaker.WriteRootCertificateAndPrivateKeyToPkcs12File(
+                        Constants.CertLocation, Constants.CertPassword);
+                }
+                else
+                {
+                    certMaker.ReadRootCertificateAndPrivateKeyFromPkcs12File(
+                        Constants.CertLocation, Constants.CertPassword);
+                }
+
+                if (!CertMaker.rootCertIsTrusted())
+                {
+                    CertMaker.trustRootCert();
+                }
+
+                return CertMaker.rootCertIsTrusted();
             }
-
-            var certMaker = new BCCertMaker.BCCertMaker();
-            CertMaker.oCertProvider = certMaker;
-
-            if (!File.Exists(Constants.CertLocation))
+            catch (Exception ex)
             {
-                certMaker.CreateRootCertificate();
-                certMaker.WriteRootCertificateAndPrivateKeyToPkcs12File(
-                    Constants.CertLocation, Constants.CertPassword);
+                LogMessage?.Invoke($"Certificate check error: {ex.Message}");
+                return false;
             }
-            else
-            {
-                certMaker.ReadRootCertificateAndPrivateKeyFromPkcs12File(
-                    Constants.CertLocation, Constants.CertPassword);
-            }
-
-            if (!CertMaker.rootCertIsTrusted())
-            {
-                CertMaker.trustRootCert();
-            }
-
-            return CertMaker.rootCertIsTrusted();
         }
 
         /// <summary>
@@ -72,36 +83,53 @@ namespace Freezium.Infrastructure.Proxy
 
             LogMessage?.Invoke("Creating Internet Proxy...");
 
+            int certAttempts = 0;
             while (!EnsureCertificate())
             {
+                certAttempts++;
+                if (certAttempts >= 5)
+                {
+                    LogMessage?.Invoke("Certificate trust was not granted. Proxy start aborted.");
+                    StatusChanged?.Invoke("Stopped");
+                    return;
+                }
+
                 StatusChanged?.Invoke("Waiting for you to trust certificate");
-                await Task.Delay(3000);
+                await Task.Delay(2000);
             }
 
-            var settings = new FiddlerCoreStartupSettingsBuilder()
-                .ListenOnPort(Constants.ProxyPort)
-                .ChainToUpstreamGateway()
-                .DecryptSSL()
-                .OptimizeThreadPool()
-                .Build();
+            try
+            {
+                var settings = new FiddlerCoreStartupSettingsBuilder()
+                    .ListenOnPort(Constants.ProxyPort)
+                    .ChainToUpstreamGateway()
+                    .DecryptSSL()
+                    .OptimizeThreadPool()
+                    .Build();
 
 #pragma warning disable CS0618
-            CONFIG.sHostsThatBypassFiddler = Constants.BypassHost;
+                CONFIG.sHostsThatBypassFiddler = Constants.BypassHost;
 
-            // Performance: Enable socket reuse
-            CONFIG.bReuseServerSockets = true;
-            CONFIG.bReuseClientSockets = true;
+                // Performance: Enable socket reuse
+                CONFIG.bReuseServerSockets = true;
+                CONFIG.bReuseClientSockets = true;
 
-            FiddlerApplication.BeforeRequest += _requestInterceptor.Handle;
-            FiddlerApplication.BeforeResponse += _responseInterceptor.Handle;
-            FiddlerApplication.Startup(settings);
+                FiddlerApplication.BeforeRequest += _requestInterceptor.Handle;
+                FiddlerApplication.BeforeResponse += _responseInterceptor.Handle;
+                FiddlerApplication.Startup(settings);
 
-            // Automatically configure Windows PAC so only target domains route through proxy
-            SystemProxyHelper.EnablePac($"http://127.0.0.1:{Constants.ProxyPort}/proxy.pac");
+                // Automatically configure Windows PAC so only target domains route through proxy
+                SystemProxyHelper.EnablePac($"http://127.0.0.1:{Constants.ProxyPort}/proxy.pac");
 
-            LogMessage?.Invoke($"Internet Proxy Enabled ({FiddlerApplication.oProxy.ListenPort})");
-            LogMessage?.Invoke("Smart PAC routing active: Only target anime traffic is proxied. Zero internet speed loss.");
-            StatusChanged?.Invoke("Running");
+                LogMessage?.Invoke($"Internet Proxy Enabled ({FiddlerApplication.oProxy.ListenPort})");
+                LogMessage?.Invoke("Smart PAC routing active: Only target anime traffic is proxied. Zero internet speed loss.");
+                StatusChanged?.Invoke("Running");
+            }
+            catch (Exception ex)
+            {
+                LogMessage?.Invoke($"Proxy start error: {ex.Message}");
+                StatusChanged?.Invoke("Stopped");
+            }
         }
 
         /// <summary>

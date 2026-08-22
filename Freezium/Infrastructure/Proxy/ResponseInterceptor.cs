@@ -73,9 +73,9 @@ namespace Freezium.Infrastructure.Proxy
                         HandleUserDetailsResponse(session);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Silent fail - don't crash the pipeline
+                LogMessage?.Invoke($"Response Interceptor Warning: {ex.Message}");
             }
         }
 
@@ -246,8 +246,15 @@ namespace Freezium.Infrastructure.Proxy
 
             try
             {
-                var id = System.Web.HttpUtility.ParseQueryString(
-                    new Uri(session.fullUrl).Query)["id"];
+                string id = null;
+                if (Uri.TryCreate(session.fullUrl, UriKind.Absolute, out var uri))
+                {
+                    id = System.Web.HttpUtility.ParseQueryString(uri.Query)["id"];
+                }
+                else if (Uri.TryCreate("https://" + session.fullUrl.TrimStart('/'), UriKind.Absolute, out uri))
+                {
+                    id = System.Web.HttpUtility.ParseQueryString(uri.Query)["id"];
+                }
 
                 if (string.IsNullOrEmpty(id))
                     return;

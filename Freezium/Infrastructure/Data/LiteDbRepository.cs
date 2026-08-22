@@ -9,13 +9,15 @@ using LiteDB;
 namespace Freezium.Infrastructure.Data
 {
     /// <summary>
-    /// LiteDB-based repository implementation.
+    /// Thread-safe LiteDB-based repository implementation.
     /// Anime cache, WatchList/Follow/Favorite CRUD and Settings persistence.
     /// </summary>
-    public class LiteDbRepository : IAnimeRepository, ISettingsRepository
+    public class LiteDbRepository : IAnimeRepository, ISettingsRepository, IDisposable
     {
         private readonly LiteDatabase _db;
         private readonly IAnimeApiClient _apiClient;
+        private readonly object _dbLock = new object();
+        private bool _disposed;
 
         public LiteDbRepository(IAnimeApiClient apiClient)
         {
@@ -30,14 +32,24 @@ namespace Freezium.Infrastructure.Data
 
         public void Save(AppSettings settings)
         {
-            var collection = _db.GetCollection<AppSettings>("settings");
-            collection.Upsert(settings);
+            if (settings == null) return;
+
+            lock (_dbLock)
+            {
+                if (_disposed) return;
+                var collection = _db.GetCollection<AppSettings>("settings");
+                collection.Upsert(settings);
+            }
         }
 
         public AppSettings Load()
         {
-            var collection = _db.GetCollection<AppSettings>("settings");
-            return collection.FindById(1);
+            lock (_dbLock)
+            {
+                if (_disposed) return null;
+                var collection = _db.GetCollection<AppSettings>("settings");
+                return collection.FindById(1);
+            }
         }
 
         #endregion
@@ -46,33 +58,62 @@ namespace Freezium.Infrastructure.Data
 
         public Anime GetCachedAnime(string id)
         {
-            var cache = _db.GetCollection<Anime>("Anime_Cache");
-            var found = cache.Find(x => x.ID == id);
+            if (string.IsNullOrEmpty(id)) return null;
 
-            if (found.Any())
+            Anime cachedData = null;
+
+            lock (_dbLock)
             {
-                var data = found.FirstOrDefault();
-                if (DateTime.UtcNow.CompareTo(data.Expire) < 0)
+                if (_disposed) return null;
+                var cache = _db.GetCollection<Anime>("Anime_Cache");
+                var found = cache.Find(x => x.ID == id).FirstOrDefault();
+
+                if (found != null)
                 {
-                    return data;
+                    if (DateTime.UtcNow.CompareTo(found.Expire) < 0)
+                    {
+                        return found;
+                    }
+                    cachedData = found; // Kept as fallback in case API fetch fails
                 }
             }
 
             // Cache miss or expired - fetch from API
-            var anime = _apiClient.GetAnime(id);
-            if (anime != null)
+            try
             {
-                anime.Expire = DateTime.UtcNow.AddDays(7);
-                cache.Upsert(anime);
+                var anime = _apiClient.GetAnime(id);
+                if (anime != null)
+                {
+                    anime.Expire = DateTime.UtcNow.AddDays(7);
+                    lock (_dbLock)
+                    {
+                        if (!_disposed)
+                        {
+                            var cache = _db.GetCollection<Anime>("Anime_Cache");
+                            cache.Upsert(anime);
+                        }
+                    }
+                    return anime;
+                }
+            }
+            catch
+            {
+                // Fallback to expired cache if API call fails
             }
 
-            return anime;
+            return cachedData;
         }
 
         public void CacheAnime(Anime anime)
         {
-            var cache = _db.GetCollection<Anime>("Anime_Cache");
-            cache.Upsert(anime);
+            if (anime == null || string.IsNullOrEmpty(anime.ID)) return;
+
+            lock (_dbLock)
+            {
+                if (_disposed) return;
+                var cache = _db.GetCollection<Anime>("Anime_Cache");
+                cache.Upsert(anime);
+            }
         }
 
         #endregion
@@ -81,25 +122,30 @@ namespace Freezium.Infrastructure.Data
 
         public bool AddWatchList(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
+            if (string.IsNullOrEmpty(id)) return false;
+
             var anime = GetCachedAnime(id);
+            if (anime == null) return false;
 
-            if (anime == null)
-                return false;
-
-            var existing = wl.FindOne(x => x.id == id);
-            if (existing != null)
+            lock (_dbLock)
             {
-                existing.Data.watch_list = true;
-                wl.Update(existing);
-            }
-            else
-            {
-                wl.Insert(new WatchList
+                if (_disposed) return false;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var existing = wl.FindOne(x => x.id == id);
+                if (existing != null)
                 {
-                    id = anime.ID,
-                    Data = new AnimeUser { watch_list = true }
-                });
+                    if (existing.Data == null) existing.Data = new AnimeUser();
+                    existing.Data.watch_list = true;
+                    wl.Update(existing);
+                }
+                else
+                {
+                    wl.Insert(new WatchList
+                    {
+                        id = anime.ID,
+                        Data = new AnimeUser { watch_list = true }
+                    });
+                }
             }
 
             return true;
@@ -107,29 +153,50 @@ namespace Freezium.Infrastructure.Data
 
         public void RemoveWatchList(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var found = wl.FindOne(x => x.id == id);
+            if (string.IsNullOrEmpty(id)) return;
 
-            if (found != null)
+            lock (_dbLock)
             {
-                found.Data.watch_list = false;
-                wl.Update(found);
+                if (_disposed) return;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var found = wl.FindOne(x => x.id == id);
+
+                if (found != null)
+                {
+                    if (found.Data != null)
+                    {
+                        found.Data.watch_list = false;
+                        wl.Update(found);
+                    }
+                }
             }
         }
 
         public bool IsInWatchList(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var found = wl.FindOne(x => x.id == id);
-            return found?.Data.watch_list ?? false;
+            if (string.IsNullOrEmpty(id)) return false;
+
+            lock (_dbLock)
+            {
+                if (_disposed) return false;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var found = wl.FindOne(x => x.id == id);
+                return found?.Data?.watch_list ?? false;
+            }
         }
 
         public List<Anime> GetWatchList()
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var list = new List<Anime>();
+            List<WatchList> items;
+            lock (_dbLock)
+            {
+                if (_disposed) return new List<Anime>();
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                items = wl.Find(x => x.Data != null && x.Data.watch_list == true).ToList();
+            }
 
-            foreach (var item in wl.Find(x => x.Data.watch_list == true))
+            var list = new List<Anime>();
+            foreach (var item in items)
             {
                 var anime = GetCachedAnime(item.id);
                 if (anime != null)
@@ -145,25 +212,30 @@ namespace Freezium.Infrastructure.Data
 
         public bool AddFollow(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
+            if (string.IsNullOrEmpty(id)) return false;
+
             var anime = GetCachedAnime(id);
+            if (anime == null) return false;
 
-            if (anime == null)
-                return false;
-
-            var existing = wl.FindOne(x => x.id == id);
-            if (existing != null)
+            lock (_dbLock)
             {
-                existing.Data.follow = true;
-                wl.Update(existing);
-            }
-            else
-            {
-                wl.Insert(new WatchList
+                if (_disposed) return false;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var existing = wl.FindOne(x => x.id == id);
+                if (existing != null)
                 {
-                    id = anime.ID,
-                    Data = new AnimeUser { follow = true }
-                });
+                    if (existing.Data == null) existing.Data = new AnimeUser();
+                    existing.Data.follow = true;
+                    wl.Update(existing);
+                }
+                else
+                {
+                    wl.Insert(new WatchList
+                    {
+                        id = anime.ID,
+                        Data = new AnimeUser { follow = true }
+                    });
+                }
             }
 
             return true;
@@ -171,21 +243,36 @@ namespace Freezium.Infrastructure.Data
 
         public void RemoveFollow(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var found = wl.FindOne(x => x.id == id);
+            if (string.IsNullOrEmpty(id)) return;
 
-            if (found != null)
+            lock (_dbLock)
             {
-                found.Data.follow = false;
-                wl.Update(found);
+                if (_disposed) return;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var found = wl.FindOne(x => x.id == id);
+
+                if (found != null)
+                {
+                    if (found.Data != null)
+                    {
+                        found.Data.follow = false;
+                        wl.Update(found);
+                    }
+                }
             }
         }
 
         public bool IsInFollow(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var found = wl.FindOne(x => x.id == id);
-            return found?.Data.follow ?? false;
+            if (string.IsNullOrEmpty(id)) return false;
+
+            lock (_dbLock)
+            {
+                if (_disposed) return false;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var found = wl.FindOne(x => x.id == id);
+                return found?.Data?.follow ?? false;
+            }
         }
 
         #endregion
@@ -194,25 +281,30 @@ namespace Freezium.Infrastructure.Data
 
         public bool AddFavorite(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
+            if (string.IsNullOrEmpty(id)) return false;
+
             var anime = GetCachedAnime(id);
+            if (anime == null) return false;
 
-            if (anime == null)
-                return false;
-
-            var existing = wl.FindOne(x => x.id == id);
-            if (existing != null)
+            lock (_dbLock)
             {
-                existing.Data.favorite = true;
-                wl.Update(existing);
-            }
-            else
-            {
-                wl.Insert(new WatchList
+                if (_disposed) return false;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var existing = wl.FindOne(x => x.id == id);
+                if (existing != null)
                 {
-                    id = anime.ID,
-                    Data = new AnimeUser { favorite = true }
-                });
+                    if (existing.Data == null) existing.Data = new AnimeUser();
+                    existing.Data.favorite = true;
+                    wl.Update(existing);
+                }
+                else
+                {
+                    wl.Insert(new WatchList
+                    {
+                        id = anime.ID,
+                        Data = new AnimeUser { favorite = true }
+                    });
+                }
             }
 
             return true;
@@ -220,29 +312,50 @@ namespace Freezium.Infrastructure.Data
 
         public void RemoveFavorite(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var found = wl.FindOne(x => x.id == id);
+            if (string.IsNullOrEmpty(id)) return;
 
-            if (found != null)
+            lock (_dbLock)
             {
-                found.Data.favorite = false;
-                wl.Update(found);
+                if (_disposed) return;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var found = wl.FindOne(x => x.id == id);
+
+                if (found != null)
+                {
+                    if (found.Data != null)
+                    {
+                        found.Data.favorite = false;
+                        wl.Update(found);
+                    }
+                }
             }
         }
 
         public bool IsInFavorite(string id)
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var found = wl.FindOne(x => x.id == id);
-            return found?.Data.favorite ?? false;
+            if (string.IsNullOrEmpty(id)) return false;
+
+            lock (_dbLock)
+            {
+                if (_disposed) return false;
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                var found = wl.FindOne(x => x.id == id);
+                return found?.Data?.favorite ?? false;
+            }
         }
 
         public List<Anime> GetFavoriteList()
         {
-            var wl = _db.GetCollection<WatchList>("Watch_List");
-            var list = new List<Anime>();
+            List<WatchList> items;
+            lock (_dbLock)
+            {
+                if (_disposed) return new List<Anime>();
+                var wl = _db.GetCollection<WatchList>("Watch_List");
+                items = wl.Find(x => x.Data != null && x.Data.favorite == true).ToList();
+            }
 
-            foreach (var item in wl.Find(x => x.Data.favorite == true))
+            var list = new List<Anime>();
+            foreach (var item in items)
             {
                 var anime = GetCachedAnime(item.id);
                 if (anime != null)
@@ -253,5 +366,22 @@ namespace Freezium.Infrastructure.Data
         }
 
         #endregion
+
+        #region IDisposable
+
+        public void Dispose()
+        {
+            lock (_dbLock)
+            {
+                if (!_disposed)
+                {
+                    _disposed = true;
+                    _db?.Dispose();
+                }
+            }
+        }
+
+        #endregion
     }
 }
+

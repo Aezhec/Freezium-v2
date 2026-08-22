@@ -44,12 +44,12 @@ namespace Freezium.Infrastructure.Proxy
             {
                 // Serve PAC (Proxy Auto-Configuration) script dynamically
                 if (session.PathAndQuery.Equals("/proxy.pac", StringComparison.OrdinalIgnoreCase) ||
-                    session.fullUrl.IndexOf("127.0.0.1:8888/proxy.pac", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    session.fullUrl.IndexOf("localhost:8888/proxy.pac", StringComparison.OrdinalIgnoreCase) >= 0)
+                    session.fullUrl.IndexOf($"127.0.0.1:{Constants.ProxyPort}/proxy.pac", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    session.fullUrl.IndexOf($"localhost:{Constants.ProxyPort}/proxy.pac", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     string pacScript = "function FindProxyForURL(url, host) {\r\n" +
                                        "    if (dnsDomainIs(host, 'anizium.co') || shExpMatch(host, '*.anizium.co')) {\r\n" +
-                                       "        return 'PROXY 127.0.0.1:8888';\r\n" +
+                                      $"        return 'PROXY 127.0.0.1:{Constants.ProxyPort}';\r\n" +
                                        "    }\r\n" +
                                        "    return 'DIRECT';\r\n" +
                                        "}";
@@ -101,7 +101,7 @@ namespace Freezium.Infrastructure.Proxy
             }
             catch (Exception ex)
             {
-                // Silent fail - don't crash the pipeline
+                LogMessage?.Invoke($"Request Interceptor Warning: {ex.Message}");
             }
         }
 

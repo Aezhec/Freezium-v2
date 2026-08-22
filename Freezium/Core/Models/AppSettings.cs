@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using LiteDB;
 
 namespace Freezium.Core.Models
 {
@@ -13,8 +14,11 @@ namespace Freezium.Core.Models
 
         public AppSettings Get() => this;
 
-        public int Id { get; } = 1;
+        [BsonId]
+        public int Id { get; set; } = 1;
         public bool ManipulateWL { get; set; } = true;
+
+        [BsonIgnore]
         public string CfControl { get; set; }
     }
 
@@ -44,9 +48,13 @@ namespace Freezium.Core.Models
             if (targetMethod.Name.StartsWith("set_"))
             {
                 string propName = targetMethod.Name.Substring(4);
-                PropertyChanged?.Invoke(propName);
+                if (!string.Equals(propName, "CfControl", StringComparison.OrdinalIgnoreCase))
+                {
+                    PropertyChanged?.Invoke(propName);
+                }
             }
             return result;
         }
     }
 }
+

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using Freezium.Core.Interfaces;
 using Freezium.Infrastructure.Api;
@@ -18,20 +18,21 @@ namespace Freezium
         {
             // --- Dependency Wiring (Poor Man's DI) ---
             IAnimeApiClient apiClient = new AniziumApiClient();
-            var repository = new LiteDbRepository(apiClient);
+            using (var repository = new LiteDbRepository(apiClient))
+            {
+                // Initialize Settings
+                AppSettingsService.Initialize(repository);
 
-            // Initialize Settings
-            AppSettingsService.Initialize(repository);
+                // Create Proxy components
+                var requestInterceptor = new RequestInterceptor(repository);
+                var responseInterceptor = new ResponseInterceptor(repository);
+                var proxyService = new ProxyService(requestInterceptor, responseInterceptor);
 
-            // Create Proxy components
-            var requestInterceptor = new RequestInterceptor(repository);
-            var responseInterceptor = new ResponseInterceptor(repository);
-            var proxyService = new ProxyService(requestInterceptor, responseInterceptor);
-
-            // Start UI
-            var app = new App();
-            app.InitializeComponent();
-            app.Run(new MainWindow(proxyService));
+                // Start UI
+                var app = new App();
+                app.InitializeComponent();
+                app.Run(new MainWindow(proxyService));
+            }
         }
     }
 }
